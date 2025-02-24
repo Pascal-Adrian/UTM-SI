@@ -1,4 +1,4 @@
-#include "uart.h"
+#include "UART.h"
 
 static FILE uartout = {0};
 static FILE uartin = {0};
