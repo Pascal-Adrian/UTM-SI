@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "led_control.h"
+#include "LedControl.h"
 
 const int LED_PIN = 13;
 
