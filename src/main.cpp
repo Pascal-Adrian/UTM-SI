@@ -1,51 +1,45 @@
-#include "LCDOutput.h"
+#include <Arduino.h>
+#include <stdio.h>
+#include <string.h>
 #include "KeypadInput.h"
+#include "LCDOutput.h"
 
-const char PASSWORD[] = "DCBA";
+void initializeKeypadLcd()
+{
+    initializeLCD();
+
+    static FILE lcdout;
+    static FILE kpdin;
+
+    fdev_setup_stream(&lcdout, lcd_putchar, NULL, _FDEV_SETUP_WRITE);
+    fdev_setup_stream(&kpdin, NULL, keypad_getchar, _FDEV_SETUP_READ);
+
+    stdout = &lcdout;
+    stdin = &kpdin;
+}
 
 void setup()
 {
-    initializeLCD();
-    initializeKeypad();
-    printf("Enter Password:");
+    initializeKeypadLcd();
+    printf("Enter Password: ");
 }
 
 void loop()
 {
-    static char input[17] = {0};
-    static uint8_t inputPos = 0;
+    char input[17];
+    scanf("%16s", input);
 
-    if (kbhit())
+    printf("\n");
+    if (strcmp(input, "DCBA") == 0)
     {
-        char key = getch_nonblocking();
-        if (key == '#')
-        {
-            input[inputPos] = '\0';
-            printf("\n");
-            if (strcmp(input, PASSWORD) == 0)
-            {
-                printf("Access Granted");
-            }
-            else
-            {
-                printf("Wrong Password");
-            }
-            inputPos = 0;
-            delay(2000);
-            clearLCD();
-            printf("Enter Password:");
-        }
-        else if (key == '*')
-        {
-            inputPos = 0;
-            clearLCD();
-            printf("Enter Password:");
-        }
-        else if (inputPos < 16)
-        {
-            input[inputPos++] = key;
-            lcd.setCursor(0, 1);
-            lcd.print(input);
-        }
+        printf("Access Granted");
     }
+    else
+    {
+        printf("Wrong Password");
+    }
+
+    delay(2000);
+    lcd.clear();
+    printf("Enter Password: ");
 }

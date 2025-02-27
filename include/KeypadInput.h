@@ -2,10 +2,8 @@
 #define KEYPADINPUT_H
 
 #include <Keypad.h>
+#include <stdio.h>
 
-extern Keypad keypad;
-void initializeKeypad();
-bool kbhit();
-int getch_nonblocking();
+int keypad_getchar(FILE *stream);
 
 #endif

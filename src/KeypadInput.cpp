@@ -9,17 +9,20 @@ char keys[ROWS][COLS] = {
     {'*', '0', '#', 'D'}};
 byte rowPins[ROWS] = {9, 8, 7, 6};
 byte colPins[COLS] = {5, 4, 3, 2};
+
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-void initializeKeypad() {}
-
-bool kbhit()
+int keypad_getchar(FILE *stream)
 {
-    return keypad.getKey();
-}
+    char key;
+    do
+    {
+        key = keypad.getKey();
+    } while (!key);
 
-int getch_nonblocking()
-{
-    char key = keypad.getKey();
-    return key ? key : -1;
+    if (key == '#')
+    {
+        key = '\n';
+    }
+    return key;
 }
