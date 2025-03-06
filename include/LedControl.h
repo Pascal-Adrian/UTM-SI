@@ -3,5 +3,6 @@
 
 void initializeLed();
 void setLedState(bool state);
+void setLed(int pin, bool state);
 
 #endif

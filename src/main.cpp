@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
+#include "UART.h"
 #include "Globals.h"
 #include "Config.h"
 #include "Led.h"
@@ -8,7 +9,7 @@
 
 void setup()
 {
-    void initializeUart();
+    initializeUart();
     pinMode(BUTTON_PIN, INPUT_PULLUP);
     pinMode(LED_1_PIN, OUTPUT);
     pinMode(LED_2_PIN, OUTPUT);

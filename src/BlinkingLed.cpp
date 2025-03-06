@@ -3,37 +3,34 @@
 #include "Globals.h"
 #include <Arduino.h>
 #include <stdio.h>
+#include "LedControl.h"
+#include "ButtonControl.h"
 
-void run_blinking_led() {
-    if (!led1State) {
+void run_blinking_led()
+{
+    if (!led1State)
+    {
         led2State = !led2State;
-        digitalWrite(LED_2_PIN, led2State ? HIGH : LOW);
-    } else {
-        digitalWrite(LED_2_PIN, LOW);
+        setLed(LED_2_PIN, led2State);
+    }
+    else
+    {
+        setLed(LED_2_PIN, false);
     }
     lastTaskTime[1] = millis();
 }
 
-void run_blinking_led_buttons() {
-    bool incButtonState = digitalRead(BUTTON_INC_PIN) == LOW;
-    bool decButtonState = digitalRead(BUTTON_DEC_PIN) == LOW;
-    if (incButtonState && !incButtonPressed) {
-        if (counter < 60) {
-            counter++;
-            printf("Blink count increased to: %d\n", counter);
-        }
-        incButtonPressed = true;
-    } else if (!incButtonState && incButtonPressed) {
-        incButtonPressed = false;
+void run_blinking_led_buttons()
+{
+    if (isButtonPressed(BUTTON_INC_PIN, incButtonPressed) && counter < 60)
+    {
+        counter++;
+        printf("Blink count increased to: %d\n", counter);
     }
-    if (decButtonState && !decButtonPressed) {
-        if (counter > 1) {
-            counter--;
-            printf("Blink count decreased to: %d\n", counter);
-        }
-        decButtonPressed = true;
-    } else if (!decButtonState && decButtonPressed) {
-        decButtonPressed = false;
+    if (isButtonPressed(BUTTON_DEC_PIN, decButtonPressed) && counter > 1)
+    {
+        counter--;
+        printf("Blink count decreased to: %d\n", counter);
     }
     lastTaskTime[2] = millis();
 }

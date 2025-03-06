@@ -13,3 +13,8 @@ void setLedState(bool state)
 {
     digitalWrite(LED_PIN, state ? HIGH : LOW);
 }
+
+void setLed(int pin, bool state)
+{
+    digitalWrite(pin, state ? HIGH : LOW);
+}
