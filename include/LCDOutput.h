@@ -9,5 +9,6 @@ extern LiquidCrystal_I2C lcd;
 
 void initializeLCD();
 int lcd_putchar(char c, FILE *stream);
+void lcdPrintFormatted(const char *format, ...);
 
 #endif

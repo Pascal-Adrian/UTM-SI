@@ -1,41 +1,127 @@
+/**
+ * Ultrasonic Sensor Application with FreeRTOS for Arduino Uno
+ * Main file: Contains setup, loop and main task
+ */
+
 #include <Arduino.h>
+#include <Arduino_FreeRTOS.h>
+#include <semphr.h>
 #include <stdio.h>
-#include <string.h>
+#include "RangeSensor.h"
+#include "NoiseFilter.h"
 #include "UART.h"
-#include "Globals.h"
-#include "Config.h"
-#include "Led.h"
-#include "BlinkingLed.h"
+#include "LCDOutput.h"
+
+#define TASK_MEMORY 256       // Reduced stack size for Arduino Uno
+#define SAMPLING_INTERVAL 200 // Acquisition period in milliseconds
+
+#define MEDIAN_WINDOW_SIZE 5  // Window size for salt and pepper filter
+#define AVERAGE_WINDOW_SIZE 5 // Reduced window size for Arduino memory constraints
+
+static float median_history[MEDIAN_WINDOW_SIZE];
+static float average_history[AVERAGE_WINDOW_SIZE];
+// Weights for weighted average (must sum to 1.0)
+static const float filter_weights[AVERAGE_WINDOW_SIZE] = {0.1, 0.2, 0.4, 0.2, 0.1};
+
+// Function prototypes
+void range_measurement_task(void *taskParameters);
+
+// Mutex for data access protection
+SemaphoreHandle_t output_mutex;
+
+void showRangeValue(const char *description, float range)
+{
+    char text_buffer[10];                            
+    dtostrf(range, 5, 2, text_buffer);               
+    printf("%s: %s cm\n", description, text_buffer); 
+}
 
 void setup()
 {
-    initializeUart();
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
-    pinMode(LED_1_PIN, OUTPUT);
-    pinMode(LED_2_PIN, OUTPUT);
-    pinMode(BUTTON_INC_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_DEC_PIN, INPUT_PULLUP);
-    unsigned long currentTime = millis();
-    lastTaskTime[0] = currentTime + TASK1_OFFSET;
-    lastTaskTime[1] = currentTime + TASK2_OFFSET;
-    lastTaskTime[2] = currentTime + TASK3_OFFSET;
-    digitalWrite(LED_1_PIN, led1State);
-    digitalWrite(LED_2_PIN, led2State);
+    initializeUart(); 
+
+    initializeLCD();
+
+    printf("Ultrasonic Sensor Application Starting...\n");
+
+    output_mutex = xSemaphoreCreateMutex();
+
+    init_range_sensor();
+
+    for (int idx = 0; idx < MEDIAN_WINDOW_SIZE; idx++)
+    {
+        median_history[idx] = 0.0;
+    }
+    for (int idx = 0; idx < AVERAGE_WINDOW_SIZE; idx++)
+    {
+        average_history[idx] = 0.0;
+    }
+
+    xTaskCreate(
+        range_measurement_task, 
+        "ultrasonic",           
+        TASK_MEMORY,            
+        NULL,                   
+        1,                    
+        NULL                  
+    );
+
+    printf("Application initialized successfully\n");
+
+    vTaskStartScheduler();
 }
 
 void loop()
 {
-    unsigned long currentTime = millis();
-    if (currentTime - lastTaskTime[0] >= TASK1_RECURRENCE)
+    // Empty. Things are done in Tasks.
+}
+
+/**
+ * Task for ultrasonic distance measurement and processing
+ */
+void range_measurement_task(void *taskParameters)
+{
+    (void)taskParameters;
+
+    TickType_t previous_wake;
+    const TickType_t interval = pdMS_TO_TICKS(SAMPLING_INTERVAL);
+
+    // Initialize the previous_wake variable with the current time
+    previous_wake = xTaskGetTickCount();
+
+    float raw_range, median_filtered, avg_filtered, bounded_range;
+
+    while (1)
     {
-        run_led();
-    }
-    if (currentTime - lastTaskTime[1] >= TASK2_RECURRENCE / counter)
-    {
-        run_blinking_led();
-    }
-    if (currentTime - lastTaskTime[2] >= TASK3_RECURRENCE)
-    {
-        run_blinking_led_buttons();
+        // Get raw distance measurement
+        raw_range = get_range();
+
+        // Apply salt and pepper filter
+        median_filtered = process_median_filter(raw_range, median_history, MEDIAN_WINDOW_SIZE);
+
+        // Apply weighted average filter
+        avg_filtered = process_weighted_average(median_filtered, average_history, filter_weights, AVERAGE_WINDOW_SIZE);
+
+        // Apply saturation to keep values in valid range
+        bounded_range = apply_limits(avg_filtered, MIN_RANGE_CM, MAX_RANGE_CM);
+
+        // Acquire mutex to print data
+        if (xSemaphoreTake(output_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            // Print results using printf
+            printf("Distance Measurements:\n");
+            showRangeValue("Raw", raw_range);
+            showRangeValue("After Median", median_filtered);
+            showRangeValue("After Weighted Avg", avg_filtered);
+            showRangeValue("Final (Bounded)", bounded_range);
+            char raw_range_str[10], bounded_range_str[10];
+            lcdPrintFormatted("Raw: %s cm\nFil: %s cm", dtostrf(raw_range, 5, 2, raw_range_str), dtostrf(bounded_range, 5, 2, bounded_range_str));
+
+            // Release mutex
+            xSemaphoreGive(output_mutex);
+        }
+
+        // Wait precisely for the next cycle using vTaskDelayUntil
+        vTaskDelayUntil(&previous_wake, interval);
     }
 }
