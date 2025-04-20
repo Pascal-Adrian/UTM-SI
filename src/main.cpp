@@ -1,127 +1,73 @@
-/**
- * Ultrasonic Sensor Application with FreeRTOS for Arduino Uno
- * Main file: Contains setup, loop and main task
- */
-
 #include <Arduino.h>
-#include <Arduino_FreeRTOS.h>
-#include <semphr.h>
-#include <stdio.h>
-#include "RangeSensor.h"
-#include "NoiseFilter.h"
 #include "UART.h"
-#include "LCDOutput.h"
-
-#define TASK_MEMORY 256       // Reduced stack size for Arduino Uno
-#define SAMPLING_INTERVAL 200 // Acquisition period in milliseconds
-
-#define MEDIAN_WINDOW_SIZE 5  // Window size for salt and pepper filter
-#define AVERAGE_WINDOW_SIZE 5 // Reduced window size for Arduino memory constraints
-
-static float median_history[MEDIAN_WINDOW_SIZE];
-static float average_history[AVERAGE_WINDOW_SIZE];
-// Weights for weighted average (must sum to 1.0)
-static const float filter_weights[AVERAGE_WINDOW_SIZE] = {0.1, 0.2, 0.4, 0.2, 0.1};
-
-// Function prototypes
-void range_measurement_task(void *taskParameters);
-
-// Mutex for data access protection
-SemaphoreHandle_t output_mutex;
-
-void showRangeValue(const char *description, float range)
-{
-    char text_buffer[10];                            
-    dtostrf(range, 5, 2, text_buffer);               
-    printf("%s: %s cm\n", description, text_buffer); 
-}
+#include "Relay.h"
+#include <LCDOutput.h>
 
 void setup()
 {
-    initializeUart(); 
+    // Initialize UART for serial communication
+    initializeUart();
 
+    // Initialize relay
+    relay_init();
+
+    // Initialize LCD
     initializeLCD();
 
-    printf("Ultrasonic Sensor Application Starting...\n");
-
-    output_mutex = xSemaphoreCreateMutex();
-
-    init_range_sensor();
-
-    for (int idx = 0; idx < MEDIAN_WINDOW_SIZE; idx++)
-    {
-        median_history[idx] = 0.0;
-    }
-    for (int idx = 0; idx < AVERAGE_WINDOW_SIZE; idx++)
-    {
-        average_history[idx] = 0.0;
-    }
-
-    xTaskCreate(
-        range_measurement_task, 
-        "ultrasonic",           
-        TASK_MEMORY,            
-        NULL,                   
-        1,                    
-        NULL                  
-    );
-
-    printf("Application initialized successfully\n");
-
-    vTaskStartScheduler();
+    // Print welcome message
+    printf("Relay Control System\n");
+    printf("Available commands:\n");
+    printf("- 'bulb on' : Turn the bulb on\n");
+    printf("- 'bulb off' : Turn the bulb off\n");
+    lcdPrintFormatted("*Relay Control*\nState: OFF");
 }
 
 void loop()
 {
-    // Empty. Things are done in Tasks.
-}
+    char action[10];
+    char target[10];
 
-/**
- * Task for ultrasonic distance measurement and processing
- */
-void range_measurement_task(void *taskParameters)
-{
-    (void)taskParameters;
+    printf("> ");
 
-    TickType_t previous_wake;
-    const TickType_t interval = pdMS_TO_TICKS(SAMPLING_INTERVAL);
-
-    // Initialize the previous_wake variable with the current time
-    previous_wake = xTaskGetTickCount();
-
-    float raw_range, median_filtered, avg_filtered, bounded_range;
-
-    while (1)
+    // Read command from terminal
+    if (scanf("%s %s", target, action) == 2)
     {
-        // Get raw distance measurement
-        raw_range = get_range();
-
-        // Apply salt and pepper filter
-        median_filtered = process_median_filter(raw_range, median_history, MEDIAN_WINDOW_SIZE);
-
-        // Apply weighted average filter
-        avg_filtered = process_weighted_average(median_filtered, average_history, filter_weights, AVERAGE_WINDOW_SIZE);
-
-        // Apply saturation to keep values in valid range
-        bounded_range = apply_limits(avg_filtered, MIN_RANGE_CM, MAX_RANGE_CM);
-
-        // Acquire mutex to print data
-        if (xSemaphoreTake(output_mutex, portMAX_DELAY) == pdTRUE)
+        printf("%s %s\n", target, action);
+        // Check if command is valid
+        if (strcmp(target, "bulb") == 0)
         {
-            // Print results using printf
-            printf("Distance Measurements:\n");
-            showRangeValue("Raw", raw_range);
-            showRangeValue("After Median", median_filtered);
-            showRangeValue("After Weighted Avg", avg_filtered);
-            showRangeValue("Final (Bounded)", bounded_range);
-            char raw_range_str[10], bounded_range_str[10];
-            lcdPrintFormatted("Raw: %s cm\nFil: %s cm", dtostrf(raw_range, 5, 2, raw_range_str), dtostrf(bounded_range, 5, 2, bounded_range_str));
-
-            // Release mutex
-            xSemaphoreGive(output_mutex);
+            if (strcmp(action, "on") == 0)
+            {
+                relay_turnOn();
+                printf("Bulb turned ON\n");
+                lcdPrintFormatted("*Relay Control*\nState: ON");
+            }
+            else if (strcmp(action, "off") == 0)
+            {
+                relay_turnOff();
+                printf("Bulb turned OFF\n");
+                lcdPrintFormatted("*Relay Control*\nState: OFF");
+            }
+            else
+            {
+                printf("Unknown action: %s\n", action);
+                printf("Valid actions are: 'on', 'off'\n");
+            }
         }
-
-        // Wait precisely for the next cycle using vTaskDelayUntil
-        vTaskDelayUntil(&previous_wake, interval);
+        else
+        {
+            printf("Unknown target: %s\n", target);
+            printf("Valid target is: 'bulb'\n");
+        }
     }
+    else
+    {
+        // Clear input buffer on error
+        while (getchar() != '\n' && getchar() != EOF)
+            ;
+        printf("Invalid command format. Use: 'bulb on' or 'bulb off'\n");
+    }
+
+    // Small delay to prevent tight loop
+    delay(100);
 }

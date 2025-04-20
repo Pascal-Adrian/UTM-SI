@@ -11,7 +11,6 @@ void init_range_sensor(void)
 
 float get_range(void)
 {
-    unsigned long echo_start, echo_end;
     float echo_time, measured_range;
 
     digitalWrite(PING_PIN, LOW);

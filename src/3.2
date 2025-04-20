@@ -7,20 +7,17 @@
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
 #include <stdio.h>
-#include "range_sensor.h"
-#include "noise_filter.h"
-#include "serial_printf.h"
-#include "lcd_print.h"
+#include "RangeSensor.h"
+#include "NoiseFilter.h"
+#include "UART.h"
+#include "LCDOutput.h"
 
-// Task parameters
 #define TASK_MEMORY 256       // Reduced stack size for Arduino Uno
-#define SAMPLING_INTERVAL 500 // Acquisition period in milliseconds
+#define SAMPLING_INTERVAL 200 // Acquisition period in milliseconds
 
-// Signal conditioning parameters
 #define MEDIAN_WINDOW_SIZE 5  // Window size for salt and pepper filter
 #define AVERAGE_WINDOW_SIZE 5 // Reduced window size for Arduino memory constraints
 
-// Filter buffers
 static float median_history[MEDIAN_WINDOW_SIZE];
 static float average_history[AVERAGE_WINDOW_SIZE];
 // Weights for weighted average (must sum to 1.0)
@@ -34,62 +31,48 @@ SemaphoreHandle_t output_mutex;
 
 void showRangeValue(const char *description, float range)
 {
-  char text_buffer[10];                            // Ensure enough space for the formatted string
-  dtostrf(range, 5, 2, text_buffer);               // Convert float to string
-  printf("%s: %s cm\n", description, text_buffer); // Use %s instead of %f
+    char text_buffer[10];
+    dtostrf(range, 5, 2, text_buffer);
+    printf("%s: %s cm\n", description, text_buffer);
 }
 
 void setup()
 {
-  // Initialize serial communication
-  Serial.begin(9600);
-  while (!Serial)
-  {
-    ; // Wait for serial port to connect
-  }
+    initializeUart();
 
-  // Initialize printf redirection
-  setup_serial_printf();
+    initializeLCD();
 
-  LCDSetup();
+    printf("Ultrasonic Sensor Application Starting...\n");
 
-  printf("Ultrasonic Sensor Application Starting...\n");
+    output_mutex = xSemaphoreCreateMutex();
 
-  // Create mutex
-  output_mutex = xSemaphoreCreateMutex();
+    init_range_sensor();
 
-  // Initialize hardware
-  init_range_sensor();
+    for (int idx = 0; idx < MEDIAN_WINDOW_SIZE; idx++)
+    {
+        median_history[idx] = 0.0;
+    }
+    for (int idx = 0; idx < AVERAGE_WINDOW_SIZE; idx++)
+    {
+        average_history[idx] = 0.0;
+    }
 
-  // Initialize filter buffers
-  for (int idx = 0; idx < MEDIAN_WINDOW_SIZE; idx++)
-  {
-    median_history[idx] = 0.0;
-  }
-  for (int idx = 0; idx < AVERAGE_WINDOW_SIZE; idx++)
-  {
-    average_history[idx] = 0.0;
-  }
+    xTaskCreate(
+        range_measurement_task,
+        "ultrasonic",
+        TASK_MEMORY,
+        NULL,
+        1,
+        NULL);
 
-  // Create task
-  xTaskCreate(
-      range_measurement_task, // Task function
-      "ultrasonic",           // Task name
-      TASK_MEMORY,            // Stack size
-      NULL,                   // Parameters
-      1,                      // Priority
-      NULL                    // Task handle
-  );
+    printf("Application initialized successfully\n");
 
-  printf("Application initialized successfully\n");
-
-  // Start the scheduler
-  vTaskStartScheduler();
+    vTaskStartScheduler();
 }
 
 void loop()
 {
-  // Empty. Things are done in Tasks.
+    // Empty. Things are done in Tasks.
 }
 
 /**
@@ -97,47 +80,47 @@ void loop()
  */
 void range_measurement_task(void *taskParameters)
 {
-  (void)taskParameters;
+    (void)taskParameters;
 
-  TickType_t previous_wake;
-  const TickType_t interval = pdMS_TO_TICKS(SAMPLING_INTERVAL);
+    TickType_t previous_wake;
+    const TickType_t interval = pdMS_TO_TICKS(SAMPLING_INTERVAL);
 
-  // Initialize the previous_wake variable with the current time
-  previous_wake = xTaskGetTickCount();
+    // Initialize the previous_wake variable with the current time
+    previous_wake = xTaskGetTickCount();
 
-  float raw_range, median_filtered, avg_filtered, bounded_range;
+    float raw_range, median_filtered, avg_filtered, bounded_range;
 
-  while (1)
-  {
-    // Get raw distance measurement
-    raw_range = get_range();
-
-    // Apply salt and pepper filter
-    median_filtered = process_median_filter(raw_range, median_history, MEDIAN_WINDOW_SIZE);
-
-    // Apply weighted average filter
-    avg_filtered = process_weighted_average(median_filtered, average_history, filter_weights, AVERAGE_WINDOW_SIZE);
-
-    // Apply saturation to keep values in valid range
-    bounded_range = apply_limits(avg_filtered, MIN_RANGE_CM, MAX_RANGE_CM);
-
-    // Acquire mutex to print data
-    if (xSemaphoreTake(output_mutex, portMAX_DELAY) == pdTRUE)
+    while (1)
     {
-      // Print results using printf
-      printf("Distance Measurements:\n");
-      showRangeValue("Raw", raw_range);
-      showRangeValue("After Median", median_filtered);
-      showRangeValue("After Weighted Avg", avg_filtered);
-      showRangeValue("Final (Bounded)", bounded_range);
-      char raw_range_str[10], bounded_range_str[10];
-      lcdPrintFormatted("Raw: %s cm\nFil: %s cm", dtostrf(raw_range, 5, 2, raw_range_str), dtostrf(bounded_range, 5, 2, bounded_range_str));
+        // Get raw distance measurement
+        raw_range = get_range();
 
-      // Release mutex
-      xSemaphoreGive(output_mutex);
+        // Apply salt and pepper filter
+        median_filtered = process_median_filter(raw_range, median_history, MEDIAN_WINDOW_SIZE);
+
+        // Apply weighted average filter
+        avg_filtered = process_weighted_average(median_filtered, average_history, filter_weights, AVERAGE_WINDOW_SIZE);
+
+        // Apply saturation to keep values in valid range
+        bounded_range = apply_limits(avg_filtered, MIN_RANGE_CM, MAX_RANGE_CM);
+
+        // Acquire mutex to print data
+        if (xSemaphoreTake(output_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            // Print results using printf
+            printf("Distance Measurements:\n");
+            showRangeValue("Raw", raw_range);
+            showRangeValue("After Median", median_filtered);
+            showRangeValue("After Weighted Avg", avg_filtered);
+            showRangeValue("Final (Bounded)", bounded_range);
+            char raw_range_str[10], bounded_range_str[10];
+            lcdPrintFormatted("Raw: %s cm\nFil: %s cm", dtostrf(raw_range, 5, 2, raw_range_str), dtostrf(bounded_range, 5, 2, bounded_range_str));
+
+            // Release mutex
+            xSemaphoreGive(output_mutex);
+        }
+
+        // Wait precisely for the next cycle using vTaskDelayUntil
+        vTaskDelayUntil(&previous_wake, interval);
     }
-
-    // Wait precisely for the next cycle using vTaskDelayUntil
-    vTaskDelayUntil(&previous_wake, interval);
-  }
 }
