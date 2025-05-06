@@ -1,0 +1,130 @@
+#include "MotorDriver.h"
+#include "UART.h"
+#include "LCDOutput.h"
+#include <stdio.h>
+#include <string.h>
+
+#define MAX_BUFFER_SIZE 64
+
+void setup()
+{
+    // Initialize UART for scanf/printf support
+    initializeUart();
+
+    // Initialize LCD
+    initializeLCD();
+
+    // Initialize motor with proper pins
+    motorInit(2, 3, 4);
+
+    printf("Motor control ready\n");
+    lcdPrintFormatted("MT: STOP\nP: 0%% PWM: 0");
+}
+
+// Helper function to update the LCD with motor state
+void updateLCDWithMotorState()
+{
+    int power = motorGetPower();
+    int pwmValue = map(abs(power), 0, 100, 0, 255);
+
+    // Determine direction text
+    const char *direction;
+    if (power > 0)
+    {
+        direction = "FWD";
+    }
+    else if (power < 0)
+    {
+        direction = "REV";
+    }
+    else
+    {
+        direction = "STOP";
+    }
+
+    // Display direction, power percentage and PWM value
+    lcdPrintFormatted("MT: %s\nP: %d%% PWM: %d",
+                      direction, abs(power), pwmValue);
+}
+
+void loop()
+{
+    char buffer[MAX_BUFFER_SIZE];
+
+    printf("> ");
+    // Read a line of input into buffer
+    if (fgets(buffer, MAX_BUFFER_SIZE, stdin) != NULL)
+    {
+        // Parse the command
+        char action[16];
+        char command[16];
+        int value;
+        printf("%s", buffer);
+        // Process command based on number of parameters
+        if (sscanf(buffer, "%s %s %d", action, command, &value) == 3)
+        {
+            // Command with value (e.g., "motor set 50")
+            if (strcmp(action, "motor") == 0 && strcmp(command, "set") == 0)
+            {
+                motorSet(value);
+                printf("Motor set to: %d\n", value);
+                updateLCDWithMotorState();
+            }
+            else if (strcmp(action, "motor") == -1)
+            {
+                printf("Unknown action: %s\n", action);
+            }
+            else if (strcmp(command, "set") == -1)
+            {
+                printf("Unknown command: %s\n", command);
+            }
+            else
+            {
+                printf("Invalid command format\n");
+            }
+        }
+        else if (sscanf(buffer, "%s %s", action, command) == 2)
+        {
+            // Command without value (e.g., "motor stop")
+            if (strcmp(action, "motor") == 0)
+            {
+                if (strcmp(command, "stop") == 0)
+                {
+                    motorStop();
+                    printf("Motor stopped\n");
+                    updateLCDWithMotorState();
+                }
+                else if (strcmp(command, "max") == 0)
+                {
+                    motorMax();
+                    printf("Motor set to max: %d\n", motorGetPower());
+                    updateLCDWithMotorState();
+                }
+                else if (strcmp(command, "inc") == 0)
+                {
+                    motorInc();
+                    printf("Motor power increased to: %d\n", motorGetPower());
+                    updateLCDWithMotorState();
+                }
+                else if (strcmp(command, "dec") == 0)
+                {
+                    motorDec();
+                    printf("Motor power decreased to: %d\n", motorGetPower());
+                    updateLCDWithMotorState();
+                }
+                else
+                {
+                    printf("Unknown command: %s\n", command);
+                }
+            }
+            else
+            {
+                printf("Unknown action: %s\n", action);
+            }
+        }
+        else
+        {
+            printf("Invalid command format\n");
+        }
+    }
+}
